@@ -1,8 +1,12 @@
 from ctypes import *
 import math
 import random
+import scipy, scipy.misc
+import cv2
+import os, sys
 
 def sample(probs):
+
     s = sum(probs)
     probs = [a/s for a in probs]
     r = random.uniform(0, 1)
@@ -60,6 +64,10 @@ make_boxes.restype = POINTER(BOX)
 free_ptrs = lib.free_ptrs
 free_ptrs.argtypes = [POINTER(c_void_p), c_int]
 
+get_image_from_file = lib.get_image_from_file
+get_image_from_file.argtypes = [c_char_p]
+get_image_from_file.restype = IMAGE
+
 num_boxes = lib.num_boxes
 num_boxes.argtypes = [c_void_p]
 num_boxes.restype = c_int
@@ -103,6 +111,25 @@ predict_image.restype = POINTER(c_float)
 network_detect = lib.network_detect
 network_detect.argtypes = [c_void_p, IMAGE, c_float, c_float, c_float, POINTER(BOX), POINTER(POINTER(c_float))]
 
+def video_capture(process, file=0, freq=25, show=False):
+    img = get_image_from_file(bytes(file, 'utf-8'), 0)
+    count = 0
+    results = []
+    while img.c!=0:
+        if show:
+            cv2.imshow('frame',img)
+        if file==0 & cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        res = process(img)
+        print(res)
+        results.append(res)
+        img = get_image_from_file(bytes(file, 'utf-8'), int(count*25/freq))
+        count+=1
+    # When everything done, release the capture
+    # cap.release()
+    # cv2.destroyAllWindows()
+    return results
+
 def classify(net, meta, im):
     out = predict_image(net, im)
     res = []
@@ -112,7 +139,8 @@ def classify(net, meta, im):
     return res
 
 def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
-    im = load_image(image, 0, 0)
+    #im = load_image(image, 0, 0)
+    im = image
     boxes = make_boxes(net)
     probs = make_probs(net)
     num =   num_boxes(net)
@@ -128,12 +156,8 @@ def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
     return res
 
 if __name__ == "__main__":
-    #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
-    #im = load_image("data/wolf.jpg", 0, 0)
-    #meta = load_meta("cfg/imagenet1k.data")
-    #r = classify(net, meta, im)
-    #print r[:10]
-    net = load_net(b'cfg/yolo.cfg', b'yolo.weights', 0)
-    meta = load_meta(b'cfg/coco.data')
-    r = detect(net, meta, b'data/horses.jpg')
-    print(r)
+    net = load_net(b'cfg/tiny-yolo-voc.cfg', b'tiny-yolo-voc.weights', 0)
+    meta = load_meta(b'cfg/voc.data')
+    process = lambda im : detect(net, meta, im)
+    # r = detect(net, meta, b'data/horses.jpg')
+    print(video_capture(process, sys.argv[1], freq=0.5))
